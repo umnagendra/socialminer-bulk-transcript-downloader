@@ -60,3 +60,13 @@ target/
 
 #Ipython Notebook
 .ipynb_checkpoints
+
+# IDE-specific files
+.idea/
+*.iml
+*.ipr
+*.iws
+.settings
+
+# The irritating thing that gets created every time you open any file in OS X
+.DS_Store
