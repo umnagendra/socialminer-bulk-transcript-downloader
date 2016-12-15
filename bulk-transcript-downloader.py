@@ -22,6 +22,8 @@
 import sys
 import argparse
 import requests
+import time
+import xml.etree.ElementTree as ElementTree
 
 # CONSTANTS
 SEARCH_API_URL = "http://{}/ccp-webapp/ccp/search/contacts?q=sc.sourceType:chat%20AND%20sc.socialContactStatus:handled"
@@ -51,7 +53,19 @@ def main():
     password = args["password"]
 
     # make a search API request to SocialMiner to get all SCs and their transcripts
-    searchResponse = make_search_request(SEARCH_API_URL.format(host), username, password)
+    search_response = make_search_request(SEARCH_API_URL.format(host), username, password)
+    root = ElementTree.fromstring(search_response)
+
+    for chat_transcript in root.iter('ChatTranscript'):
+        print "+--------------- WEB CHAT TRANSCRIPT ---------------+"
+        print "| Exported from Cisco SocialMiner [", host, "] by '", username, "' at ", \
+            time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+        print "|"
+        print "| ID:          ", chat_transcript.find('id').text
+        print "| Customer:    ", chat_transcript.find('chatInitiator').text
+        print "| Started:     ", time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(chat_transcript.find('startDate').text)/1000))
+        print "| Ended:       ", time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(chat_transcript.find('endDate').text)/1000))
+        print "+---------------------------------------------------+"
 
     # TODO - parse the response, extract all ChatTranscripts
     # TODO - for each ChatTranscript, create a text file per SC and dump contents
