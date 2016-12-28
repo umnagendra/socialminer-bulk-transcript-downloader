@@ -26,11 +26,12 @@ import time
 import xml.etree.ElementTree as ElementTree
 
 # CONSTANTS
-SEARCH_API_URL      = "http://{}/ccp-webapp/ccp/search/contacts?q=sc.sourceType:chat%20AND%20sc.socialContactStatus:handled"
-TIMESTAMP_FORMAT    = "%Y-%m-%d %H:%M:%S %Z"
-TIME_FORMAT         = "%H:%M:%S"    # for every chat message, just need the time of day
+SEARCH_API_URL = "http://{}/ccp-webapp/ccp/search/contacts?q=sc.sourceType:chat%20AND%20sc.socialContactStatus:handled"
+TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S %Z"
+TIME_FORMAT = "%H:%M:%S"  # for every chat message, just need the time of day
+FILENAME_TIMESTAMP_FORMAT = "%Y_%m_%d_%H_%M_%S_%Z"  # timestamp format to compose filenames
 
-TRANSCRIPT_METADATA     = """+--------------- WEB CHAT TRANSCRIPT ---------------+
+TRANSCRIPT_METADATA = """+--------------- WEB CHAT TRANSCRIPT ---------------+
 | Exported from Cisco SocialMiner [{0}] by '{1}' at {2}
 |
 | ID:           {3}
@@ -39,19 +40,22 @@ TRANSCRIPT_METADATA     = """+--------------- WEB CHAT TRANSCRIPT --------------
 | Ended:        {6}
 +---------------------------------------------------+
 """
-TRANSCRIPT_MSG          = """{0} [{1}]: {2}
+TRANSCRIPT_MSG = """{0} [{1}]: {2}
 """
+TRANSCRIPT_FILENAME = "ChatTranscript_{0}_{1}.txt"
+TRANSCRIPT_ARCHIVENAME = "ChatTranscripts_{0}_{1}.zip"
+
 
 def usage():
     print __name__ + " --host=<HOSTNAME/IP OF SOCIALMINER> --user=<ADMIN_USERNAME> --password=<ADMIN_PASSWORD>"
 
 
 def make_search_request(url, user, password):
-    print "Making a GET request to the URL", url
+    print "Making a GET request to the URL: %s\n" % url
     response = requests.get(url, auth=(user, password))
     if response.status_code != 200:
-        print "ERROR - API request to SocialMiner failed with status [", response.status_code, "]"
-        print "Error response:\n", response.text
+        print "ERROR - API request to SocialMiner failed with status [%d]\n" % response.status_code
+        print "Error response: %s\n" % response.text
         sys.exit(1)
     return response.text
 
@@ -62,15 +66,18 @@ def compose_transcript_metadata(transcript_node, host, user):
                                       time.strftime(TIMESTAMP_FORMAT, time.localtime(time.time())),
                                       transcript_node.find('id').text,
                                       transcript_node.find('chatInitiator').text,
-                                      time.strftime(TIMESTAMP_FORMAT, time.localtime(float(transcript_node.find('startDate').text)/1000)),
-                                      time.strftime(TIMESTAMP_FORMAT, time.localtime(float(transcript_node.find('endDate').text)/1000)));
+                                      time.strftime(TIMESTAMP_FORMAT, time.localtime(
+                                          float(transcript_node.find('startDate').text) / 1000)),
+                                      time.strftime(TIMESTAMP_FORMAT, time.localtime(
+                                          float(transcript_node.find('endDate').text) / 1000)));
 
 
 def extract_chat_messages(transcript_node):
     chat_messages = ""
     for chat_message in transcript_node.iter('chat'):
         chat_messages += TRANSCRIPT_MSG.format(chat_message.find('name').text,
-                                               time.strftime(TIME_FORMAT, time.localtime(float(chat_message.find('time').text)/1000)),
+                                               time.strftime(TIME_FORMAT, time.localtime(
+                                                   float(chat_message.find('time').text) / 1000)),
                                                chat_message.find('msg').text) + "\n"
 
     return chat_messages
@@ -80,6 +87,19 @@ def extract_transcript(transcript_node, host, user):
     transcript_content = compose_transcript_metadata(transcript_node, host, user)
     transcript_content += "\n" + extract_chat_messages(transcript_node)
     return transcript_content
+
+
+def export_transcript(transcript_node, host, user):
+    transcript_text = extract_transcript(transcript_node, host, user)
+    filename = TRANSCRIPT_FILENAME.format(transcript_node.find('chatInitiator').text,
+                                          time.strftime(FILENAME_TIMESTAMP_FORMAT,
+                                                        time.localtime(
+                                              float(transcript_node.find('startDate').text) / 1000)))
+
+    print "Exporting transcript into file: %s" % filename
+    # write to text file
+    with open(filename, 'w') as text_file:
+        text_file.write(transcript_text)
 
 
 def main():
@@ -97,11 +117,13 @@ def main():
     search_response = make_search_request(SEARCH_API_URL.format(host), username, password)
     root = ElementTree.fromstring(search_response)
 
-    for chat_transcript in root.iter('ChatTranscript'):
-        transcript_text = extract_transcript(chat_transcript, host, username)
-        print transcript_text
+    transcript_count = len(root.findall('.//ChatTranscript'))
+    print "\nFound %d chat transcripts. Starting export ...\n" % transcript_count
 
-    # TODO - for each ChatTranscript, create a text file per SC and dump contents
+    for chat_transcript in root.iter('ChatTranscript'):
+        export_transcript(chat_transcript, host, username)
+
+    # TODO archive all exported transcripts
 
 if __name__ == '__main__':
     main()
