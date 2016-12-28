@@ -10,23 +10,10 @@
 #
 # Requires Python 2.7+
 #
-# Copyright (c) 2016 by Cisco Systems, Inc.
-# All rights reserved.
+# Licensed under the MIT License. For more details, see LICENSE file
 #
-# The code included in this example is intended to provide guidance to the
-# developer on best practices and usage of the SocialMiner RESTful
-# APIs and is not intended for production use "as is".
-#
-# Cisco's responsibility and liability on this code is limited ONLY to the
-# correctness and accuracy on the usage of the RESTful API interface and
-# the quality of the RESTful API interface itself. Any omissions from this
-# example are not to be considered capabilities that are supported or not
-# supported by the product.
-#
-# For specific capabilities refer to the documentation that accompanies the latest
-# Cisco SocialMiner release and/or request help from the Cisco Developer Network
-# (http://developer.cisco.com) or the Cisco Technical Assistance Center
-#
+# Cisco™ and SocialMiner™ are registered trademarks of Cisco Systems, Inc. (https://cisco.com)
+# 
 
 import sys
 import os
@@ -67,7 +54,6 @@ def make_search_request(url, user, password):
     print "Making a GET request to the URL: %s\n" % url
 
     # We are making a HTTPS (secure) request, but ignoring SSL certificate verification intentionally
-    # since this is a sample script whose primary goal is to illustrate the use of Cisco SocialMiner REST APIs
     requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
 
     response = requests.get(url, auth=(user, password), verify=False)
