@@ -1,16 +1,25 @@
 ##
 # Cisco SocialMiner Bulk Chat Transcript Downloader
 #
+# This python script does the following:
+#
+#   0. Invokes a `/search` REST API request on a Cisco SocialMiner server for all handled chat contacts
+#   1. Processes the response from the server, and extracts chat transcript data
+#   2. Exports transcript for each chat session into a separate text file (with additional metadata)
+#   3. Archives all the exported transcripts into a ZIP file
+#
+# Requires Python 2.7+
+#
 # Copyright (c) 2016 by Cisco Systems, Inc.
 # All rights reserved.
 #
 # The code included in this example is intended to provide guidance to the
-# developer on best practices and usage of the SocialMiner Chat RESTful
+# developer on best practices and usage of the SocialMiner RESTful
 # APIs and is not intended for production use "as is".
 #
 # Cisco's responsibility and liability on this code is limited ONLY to the
-# correctness and accuracy on the usage of the Chat RESTful API interface and
-# the quality of the Chat RESTful API interface itself. Any omissions from this
+# correctness and accuracy on the usage of the RESTful API interface and
+# the quality of the RESTful API interface itself. Any omissions from this
 # example are not to be considered capabilities that are supported or not
 # supported by the product.
 #
@@ -20,30 +29,34 @@
 #
 
 import sys
+import os
+import errno
+import shutil
 import argparse
 import requests
 import time
 import xml.etree.ElementTree as ElementTree
 
 # CONSTANTS
-SEARCH_API_URL = "http://{}/ccp-webapp/ccp/search/contacts?q=sc.sourceType:chat%20AND%20sc.socialContactStatus:handled"
+SEARCH_API_URL = "https://{}/ccp-webapp/ccp/search/contacts?q=sc.sourceType:chat%20AND%20sc.socialContactStatus:handled"
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S %Z"
 TIME_FORMAT = "%H:%M:%S"  # for every chat message, just need the time of day
 FILENAME_TIMESTAMP_FORMAT = "%Y_%m_%d_%H_%M_%S_%Z"  # timestamp format to compose filenames
 
 TRANSCRIPT_METADATA = """+--------------- WEB CHAT TRANSCRIPT ---------------+
-| Exported from Cisco SocialMiner [{0}] by '{1}' at {2}
+| Exported from Cisco SocialMiner [{}] by '{}' at {}
 |
-| ID:           {3}
-| Customer:     {4}
-| Started:      {5}
-| Ended:        {6}
+| ID:           {}
+| Customer:     {}
+| Started:      {}
+| Ended:        {}
 +---------------------------------------------------+
 """
-TRANSCRIPT_MSG = """{0} [{1}]: {2}
+TRANSCRIPT_MSG = """{} [{}]: {}
 """
-TRANSCRIPT_FILENAME = "ChatTranscript_{0}_{1}.txt"
-TRANSCRIPT_ARCHIVENAME = "ChatTranscripts_{0}_{1}.zip"
+TRANSCRIPT_FILENAME = "ChatTranscript_{}-{}.txt"
+TRANSCRIPT_ARCHIVENAME = "ChatTranscripts_{}-{}"
+TRANSCRIPT_TEMP_DIRNAME = "exported_transcripts"
 
 
 def usage():
@@ -52,7 +65,12 @@ def usage():
 
 def make_search_request(url, user, password):
     print "Making a GET request to the URL: %s\n" % url
-    response = requests.get(url, auth=(user, password))
+
+    # We are making a HTTPS (secure) request, but ignoring SSL certificate verification intentionally
+    # since this is a sample script whose primary goal is to illustrate the use of Cisco SocialMiner REST APIs
+    requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+
+    response = requests.get(url, auth=(user, password), verify=False)
     if response.status_code != 200:
         print "ERROR - API request to SocialMiner failed with status [%d]\n" % response.status_code
         print "Error response: %s\n" % response.text
@@ -89,17 +107,37 @@ def extract_transcript(transcript_node, host, user):
     return transcript_content
 
 
+def create_temp_dir():
+    try:
+        os.makedirs(TRANSCRIPT_TEMP_DIRNAME)
+    except OSError as exception:
+        if exception.errno == errno.EEXIST:
+            print "Directory `%s` already exists in the current working directory.\n" \
+                  "Please delete this directory completely and run the program again." % TRANSCRIPT_TEMP_DIRNAME
+            sys.exit(2)
+        else:
+            raise
+
+
 def export_transcript(transcript_node, host, user):
     transcript_text = extract_transcript(transcript_node, host, user)
-    filename = TRANSCRIPT_FILENAME.format(transcript_node.find('chatInitiator').text,
-                                          time.strftime(FILENAME_TIMESTAMP_FORMAT,
+    filename = TRANSCRIPT_FILENAME.format(time.strftime(FILENAME_TIMESTAMP_FORMAT,
                                                         time.localtime(
-                                              float(transcript_node.find('startDate').text) / 1000)))
+                                                            float(transcript_node.find('startDate').text) / 1000)),
+                                          transcript_node.find('chatInitiator').text)
 
     print "Exporting transcript into file: %s" % filename
     # write to text file
-    with open(filename, 'w') as text_file:
+    with open(TRANSCRIPT_TEMP_DIRNAME + os.path.sep + filename, 'w') as text_file:
         text_file.write(transcript_text)
+
+
+def archive_transcripts(archive_name):
+    print "\nArchiving ...\n"
+    shutil.make_archive(archive_name, 'zip', TRANSCRIPT_TEMP_DIRNAME)
+    print "\n Transcripts successfully exported into archive: %s\n" % archive_name
+    # also, delete the temporary directory holding exported transcripts
+    shutil.rmtree(TRANSCRIPT_TEMP_DIRNAME)
 
 
 def main():
@@ -118,12 +156,22 @@ def main():
     root = ElementTree.fromstring(search_response)
 
     transcript_count = len(root.findall('.//ChatTranscript'))
-    print "\nFound %d chat transcripts. Starting export ...\n" % transcript_count
 
-    for chat_transcript in root.iter('ChatTranscript'):
-        export_transcript(chat_transcript, host, username)
+    if transcript_count > 0:
+        # create a temporary directory to hold exported transcripts
+        create_temp_dir()
 
-    # TODO archive all exported transcripts
+        print "\nFound %d chat transcripts. Starting export ...\n" % transcript_count
+
+        for chat_transcript in root.iter('ChatTranscript'):
+            export_transcript(chat_transcript, host, username)
+
+        archive_name = TRANSCRIPT_ARCHIVENAME.format(host, time.strftime(FILENAME_TIMESTAMP_FORMAT,
+                                                                         time.localtime(time.time())))
+        archive_transcripts(archive_name)
+    else:
+        print "No chat transcripts found on %s. Terminating program." % host
+
 
 if __name__ == '__main__':
     main()
